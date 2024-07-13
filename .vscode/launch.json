@@ -20,6 +20,16 @@
                 "frames/",
             ],
             "console": "integratedTerminal"
+        },
+        {
+            "name": "reminisce",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "reminisce.py",
+            "args": [
+                "frames/",
+            ],
+            "console": "integratedTerminal"
         }
     ]
 }
