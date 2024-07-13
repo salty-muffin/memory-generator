@@ -118,6 +118,7 @@ def reminisce(directory: str) -> None:
     system_prompt = """
                 You are the person in the image. Narrate the picture as if it is a memory from the perspective of the person in the picture.
                 Speak in past tense. Speak as if you remember this moment from the future. Don't repeat yourself. Make it short.
+                Speak less about your surroundings and more about the things going through your head. You can make these up.
                 """
     image_prompt = "Describe this image"
     while os.path.isfile(frame_path := os.path.join(directory, filename)):
