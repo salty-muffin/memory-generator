@@ -47,22 +47,16 @@ def capture(capture: int, directory: str) -> None:
         # wait for the camera to initialize and adjust light levels
         time.sleep(5)
 
-        cv2.namedWindow("preview")
-
         while True:
             frame = capture_and_process_frame(capture)
 
             if frame is not None:
-                # display the captured frame
-                cv2.imshow("preview", frame)
-
                 # save the captured frame
                 filename = "frame.jpg"
                 cv2.imwrite(os.path.join(directory, filename), frame)
 
-                # wait for 3 seconds or until 'q' is pressed
-                if cv2.waitKey(1000) & 0xFF == ord("q"):
-                    raise KeyboardInterrupt
+                # wait for 1 second
+                cv2.waitKey(1000)
             else:
                 print("failed to capture frame")
                 break
