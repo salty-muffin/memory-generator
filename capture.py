@@ -42,7 +42,7 @@ def capture(capture: int, directory: str) -> None:
     # create the directory in which to store the frame
     os.makedirs(directory, exist_ok=True)
 
-    print("starting capture in 5 seconds. close window with 'q' or close in terminal")
+    print("starting capture in 5 seconds...")
     try:
         # wait for the camera to initialize and adjust light levels
         time.sleep(5)
