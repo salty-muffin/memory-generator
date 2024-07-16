@@ -3,28 +3,29 @@ from typing import Literal, IO
 import os
 import click
 from dotenv import dotenv_values
-import cv2
+import errno
 import time
 import base64
+from io import BytesIO
+from operator import itemgetter
 from openai import OpenAI
 from elevenlabs import VoiceSettings, play
 from elevenlabs.client import ElevenLabs
-from io import BytesIO
-
-import json
+import yaml
 
 
 def encode_frame(path: str):
-    # read frame
-    frame = cv2.imread(path)
-
-    # convert to jpeg
-    _, buffer = cv2.imencode(".jpg", frame)
-
-    # convert to base64 string
-    base64_string = base64.b64encode(buffer).decode("utf-8")
-
-    return base64_string
+    while True:
+        try:
+            # read frame & to base64 string
+            with open(path, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode("utf-8")
+        except IOError as e:
+            if e.errno != errno.EACCES:
+                # not a "file in use" error, re-raise
+                raise
+            # file is being written to, wait a bit and retry
+            time.sleep(0.1)
 
 
 def generate_new_line(
@@ -50,11 +51,9 @@ def generate_new_line(
 def analyze_image(
     client: OpenAI,
     model: str,
-    base64_image: bytes,
     system_prompt: str,
-    image_prompt: str,
-    image_detail: Literal["high", "low", "auto"],
-    script: dict[str, any],
+    script: list[dict[str, any]],
+    new_line: dict[str, any],
 ) -> str:
     response = client.chat.completions.create(
         model=model,
@@ -65,14 +64,16 @@ def analyze_image(
             },
         ]
         + script
-        + generate_new_line(base64_image, image_prompt, image_detail),
+        + new_line,
         max_tokens=500,
     )
     response_text = response.choices[0].message.content
     return response_text
 
 
-def text_to_speech_stream(client: ElevenLabs, voice_id: str, text: str) -> IO[bytes]:
+def text_to_speech_stream(
+    client: ElevenLabs, voice_id: str, voice_settings: VoiceSettings, text: str
+) -> IO[bytes]:
     # Perform the text-to-speech conversion
     response = client.text_to_speech.convert(
         voice_id=voice_id,
@@ -80,12 +81,7 @@ def text_to_speech_stream(client: ElevenLabs, voice_id: str, text: str) -> IO[by
         output_format="mp3_22050_32",
         text=text,
         model_id="eleven_turbo_v2",
-        voice_settings=VoiceSettings(
-            stability=0.5,
-            similarity_boost=0.75,
-            style=0.0,
-            use_speaker_boost=True,
-        ),
+        voice_settings=voice_settings,
     )
 
     # Create a BytesIO object to hold the audio data in memory
@@ -103,35 +99,51 @@ def text_to_speech_stream(client: ElevenLabs, voice_id: str, text: str) -> IO[by
     return audio_stream
 
 
+# fmt: off
 @click.command()
+@click.option("--stability", type=click.FloatRange(0, 1),  default=0.5,  help="the stability setting for the elevenlabs voice")
+@click.option("--similarity", type=click.FloatRange(0, 1), default=0.75, help="the similarity setting for the elevenlabs voice")
+@click.option("--style", type=click.FloatRange(0, 1),      default=0.0,  help="the style setting for the elevenlabs voice")
+@click.option("--boost", is_flag=True, show_default=True,  default=True, help="the 'use speaker boost' setting for the elevenlabs voice to boost similarity")
+@click.option("--prompts", type=click.File(mode="r", encoding="utf-8"),  help="a .yml file with the 'system' prompt & a list of 'user' prompts", required=True, )
 @click.argument("directory", type=click.Path(exists=False))
-def reminisce(directory: str) -> None:
+# fmt: on
+def reminisce(
+    stability: float,
+    similarity: float,
+    style: float,
+    boost: bool,
+    prompts: IO[str],
+    directory: str,
+) -> None:
     # get data from .env file
     config = dotenv_values(".env")
     filename = "frame.jpg"
+    frame_path = os.path.join(directory, filename)
 
     # setup apis for openai (text) and elevenlabs (text to speech)
     openai = OpenAI(api_key=config["OPENAI_API_KEY"])
     elevenlabs = ElevenLabs(api_key=config["ELEVENLABS_API_KEY"])
 
+    # parse prompts file
+    system_prompt, user_prompts = itemgetter("system", "user")(yaml.safe_load(prompts))
+
     script = []
-    system_prompt = """
-                You are the person in the image. Narrate the picture as if it is a memory from the perspective of the person in the picture.
-                Speak in past tense. Speak as if you remember this moment from the future. Don't repeat yourself. Make it short.
-                Speak less about your surroundings and more about the things going through your head. You can make these up.
-                """
-    image_prompt = "Describe this image"
-    while os.path.isfile(frame_path := os.path.join(directory, filename)):
+    # while os.path.isfile(frame_path := os.path.join(directory, filename)):
+    for image_prompt in user_prompts:
+        if not os.path.isfile(frame_path := os.path.join(directory, filename)):
+            raise RuntimeError(
+                f"'{frame_path}' was not found. is 'capture.py' running?"
+            )
+
         frame = encode_frame(frame_path)
 
         analysis = analyze_image(
             client=openai,
             model="gpt-4o",
-            base64_image=frame,
             system_prompt=system_prompt,
-            image_prompt=image_prompt,
-            image_detail="low",
-            script=[],
+            script=script,
+            new_line=generate_new_line(frame, image_prompt, "low"),
         )
 
         script = script + [{"role": "assistant", "content": analysis}]
@@ -139,13 +151,20 @@ def reminisce(directory: str) -> None:
         print(f"answer: {analysis}")
 
         audio_stream = text_to_speech_stream(
-            elevenlabs, config["ELEVENLABS_VOICE_ID"], analysis
+            client=elevenlabs,
+            voice_id=config["ELEVENLABS_VOICE_ID"],
+            voice_settings=VoiceSettings(
+                stability=stability,
+                similarity_boost=similarity,
+                style=style,
+                use_speaker_boost=boost,
+            ),
+            text=analysis,
         )
 
         play(audio_stream)
 
-        # time.sleep(5)
-        break
+        time.sleep(5)
 
 
 if __name__ == "__main__":

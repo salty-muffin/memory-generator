@@ -27,6 +27,11 @@
             "request": "launch",
             "program": "reminisce.py",
             "args": [
+                "--stability=0.5",
+                "--similarity=0.75",
+                "--style=0.0",
+                "--boost",
+                "--prompts=data/prompts.yml",
                 "frames/",
             ],
             "console": "integratedTerminal"
