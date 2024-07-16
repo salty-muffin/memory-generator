@@ -54,6 +54,7 @@ def analyze_image(
     system_prompt: str,
     script: list[dict[str, any]],
     new_line: dict[str, any],
+    max_tokens=500,
 ) -> str:
     response = client.chat.completions.create(
         model=model,
@@ -65,7 +66,7 @@ def analyze_image(
         ]
         + script
         + new_line,
-        max_tokens=500,
+        max_tokens=max_tokens,
     )
     response_text = response.choices[0].message.content
     return response_text
@@ -136,6 +137,8 @@ def reminisce(
                 f"'{frame_path}' was not found. is 'capture.py' running?"
             )
 
+        print("analysing frame")
+
         frame = encode_frame(frame_path)
 
         analysis = analyze_image(
@@ -144,6 +147,7 @@ def reminisce(
             system_prompt=system_prompt,
             script=script,
             new_line=generate_new_line(frame, image_prompt, "low"),
+            max_tokens=300,
         )
 
         script = script + [{"role": "assistant", "content": analysis}]

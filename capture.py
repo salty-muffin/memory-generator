@@ -43,10 +43,12 @@ def capture(capture: int, directory: str) -> None:
     os.makedirs(directory, exist_ok=True)
 
     print("starting capture in 5 seconds...")
-    try:
-        # wait for the camera to initialize and adjust light levels
-        time.sleep(5)
 
+    # wait for the camera to initialize and adjust light levels
+    time.sleep(5)
+
+    print("capturing")
+    try:
         while True:
             frame = capture_and_process_frame(capture)
 
