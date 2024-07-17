@@ -106,7 +106,8 @@ def text_to_speech_stream(
 @click.option("--similarity", type=click.FloatRange(0, 1), default=0.75, help="the similarity setting for the elevenlabs voice")
 @click.option("--style", type=click.FloatRange(0, 1),      default=0.0,  help="the style setting for the elevenlabs voice")
 @click.option("--boost", is_flag=True, show_default=True,  default=True, help="the 'use speaker boost' setting for the elevenlabs voice to boost similarity")
-@click.option("--prompts", type=click.File(mode="r", encoding="utf-8"),  help="a .yml file with the 'system' prompt & a list of 'user' prompts", required=True, )
+@click.option("--interval", type=int,                      default=5,    help="the interval between checking analysing frames")
+@click.option("--prompts", type=click.File(mode="r", encoding="utf-8"),  help="a .yml file with the 'system' prompt & a list of 'user' prompts", required=True)
 @click.argument("directory", type=click.Path(exists=False))
 # fmt: on
 def reminisce(
@@ -114,6 +115,7 @@ def reminisce(
     similarity: float,
     style: float,
     boost: bool,
+    interval: int,
     prompts: IO[str],
     directory: str,
 ) -> None:
@@ -130,7 +132,6 @@ def reminisce(
     system_prompt, user_prompts = itemgetter("system", "user")(yaml.safe_load(prompts))
 
     script = []
-    # while os.path.isfile(frame_path := os.path.join(directory, filename)):
     for image_prompt in user_prompts:
         if not os.path.isfile(frame_path := os.path.join(directory, filename)):
             raise RuntimeError(
@@ -168,7 +169,9 @@ def reminisce(
 
         play(audio_stream)
 
-        time.sleep(5)
+        print(f"waiting for {interval} seconds...")
+
+        time.sleep(interval)
 
 
 if __name__ == "__main__":
