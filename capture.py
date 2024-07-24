@@ -1,6 +1,5 @@
 import os
 import click
-from dotenv import dotenv_values
 import cv2
 import time
 
