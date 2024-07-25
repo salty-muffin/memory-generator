@@ -1,6 +1,8 @@
 from typing import Literal, IO
 
 import os
+import shutil
+import subprocess
 import click
 from dotenv import dotenv_values
 import errno
@@ -9,7 +11,7 @@ import base64
 from io import BytesIO
 from operator import itemgetter
 from openai import OpenAI
-from elevenlabs import VoiceSettings, play
+from elevenlabs import Voice, VoiceSettings
 from elevenlabs.client import ElevenLabs
 import yaml
 
@@ -72,32 +74,49 @@ def analyze_image(
     return response_text
 
 
-def text_to_speech_stream(
-    client: ElevenLabs, voice_id: str, voice_settings: VoiceSettings, text: str
-) -> IO[bytes]:
-    # Perform the text-to-speech conversion
-    response = client.text_to_speech.convert(
-        voice_id=voice_id,
-        optimize_streaming_latency="0",
-        output_format="mp3_22050_32",
+def text_to_speech(
+    client: ElevenLabs,
+    text: str,
+    voice_id: str,
+    voice_settings: VoiceSettings,
+    stream=False,
+    model="eleven_multilingual_v2",
+) -> BytesIO:
+    return client.generate(
         text=text,
-        model_id="eleven_turbo_v2",
+        voice=Voice(voice_id=voice_id, settings=voice_settings),
         voice_settings=voice_settings,
+        model=model,
+        stream=stream,
     )
 
-    # Create a BytesIO object to hold the audio data in memory
-    audio_stream = BytesIO()
 
-    # Write each chunk of audio data to the stream
-    for chunk in response:
-        if chunk:
-            audio_stream.write(chunk)
+def is_installed(lib_name: str) -> bool:
+    lib = shutil.which(lib_name)
+    if lib is None:
+        return False
+    return True
 
-    # Reset stream position to the beginning
-    audio_stream.seek(0)
 
-    # Return the stream for further use
-    return audio_stream
+def play_audio(audio: BytesIO) -> None:
+    audio = b"".join(audio)
+    if not is_installed("ffplay"):
+        raise ValueError(
+            (
+                "ffplay from ffmpeg not found, necessary to play audio. "
+                "on mac you can install it with 'brew install ffmpeg'. "
+                "on linux and windows you can install it from https://ffmpeg.org/"
+            )
+        )
+    args = ["ffplay", "-autoexit", "-", "-nodisp"]
+    process = subprocess.Popen(
+        args=args,
+        stdout=subprocess.PIPE,
+        stdin=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    out, err = process.communicate(input=audio)
+    process.poll()
 
 
 # fmt: off
@@ -155,8 +174,9 @@ def reminisce(
 
         print(f"answer: {analysis}")
 
-        audio_stream = text_to_speech_stream(
+        audio_stream = text_to_speech(
             client=elevenlabs,
+            text=analysis,
             voice_id=config["ELEVENLABS_VOICE_ID"],
             voice_settings=VoiceSettings(
                 stability=stability,
@@ -164,10 +184,9 @@ def reminisce(
                 style=style,
                 use_speaker_boost=boost,
             ),
-            text=analysis,
         )
 
-        play(audio_stream)
+        play_audio(audio_stream)
 
         print(f"waiting for {interval} seconds...")
 
